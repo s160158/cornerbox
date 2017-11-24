@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
+
 
 import os  # filesystem
 import subprocess
 import math  # sqrt,
+from osgeo import ogr, osr
 
 
 def create_folder_structure(cornerlist):
@@ -70,15 +71,39 @@ def box_xyz(cornerlist):
 
 
 def box_shp(cornerlist):
-    # ESRI .shp shapefile marking extent of extract
+    # set up the shapefile driver
+    shp_driver = ogr.GetDriverByName("ESRI Shapefile")
+    # create the data source
     length = get_lengths(cornerlist)
-    fout = './extract/{}/s/box_{}x{}.shp'.format(folder_name(cornerlist), num2str(length[0], 'length'), \
-                                                 num2str(length[1], 'length'))
-    fopen = open(fout, 'w')
+    filename = './extract/{}/s/box_{}x{}.shp'.format(folder_name(cornerlist),
+                                                     num2str(length[0], 'length'),
+                                                     num2str(length[1], 'length'))
+    shp_ds = shp_driver.CreateDataSource(filename)
 
-    z = '0.0'
+    # create the spatial reference, WGS84
+    srs = osr.SpatialReference()
+    srs.ImportFromEPSG(4647)
 
-    fopen.close()
+    # create and write the layer
+    shp_lyr = shp_ds.CreateLayer('box', srs, ogr.wkbPolygon)
+    print cornerlist
+
+    feature = ogr.Feature(shp_lyr.GetLayerDefn())
+
+    wkt = 'POLYGON (({} {}, {} {}, {} {}, {} {}, {} {}))'.format(
+        cornerlist[0], cornerlist[1],
+        cornerlist[0], cornerlist[3],
+        cornerlist[2], cornerlist[3],
+        cornerlist[2], cornerlist[1],
+        cornerlist[0], cornerlist[1]  # Closes box (polygon)
+    )
+
+    box = ogr.CreateGeometryFromWkt(wkt)
+    feature.SetGeometry(box)
+    shp_lyr.CreateFeature(feature)
+
+    shp_ds = None  # Save and close the data source
+
 
 
 def get_lengths(cornerlist):
@@ -150,23 +175,30 @@ def box_tif(tif, cornerlist):
         print 'Could not find tool! ({})'.format(path_tool)
         return 1
 
-    tif2xyz(tif_extract)
 
-
-def resample(tif, tif_reduced, reslist):
+def resample(resolution_x, resolution_y, cornerlist):
     # Resample a tif at different resolution
     tool = 'gdalwarp.exe'
     path_tool = 'C:/OSGeo4W64/bin/%s' % tool
 
+    length = get_lengths(cornerlist)
 
-    for res in reslist:
-        try:
-            subprocess.call('%s -tr %s %s %s %s -overwrite' % (path_tool, res, res, tif, tif_reduced))
-        except WindowsError:
-            print 'Could not find tool! ({})'.format(path_tool)
-            return 1
-        tif2xyz(tif_reduced)  # Filename doesn't change with res
+    tif = './extract/{}/o/box_{}x{}_r04x04.tif'.format(folder_name(cornerlist),
+                                                       num2str(length[0], 'length'),
+                                                       num2str(length[1], 'length'))
 
+
+    tif_extract = './extract/{}/r/box_{}x{}_r{}x{}.tif'.format(folder_name(cornerlist),
+                                                               num2str(length[0], 'length'),
+                                                               num2str(length[1], 'length'),
+                                                               num2str(resolution_x, 'resolution'),
+                                                               num2str(resolution_y, 'resolution'))
+
+    try:
+        subprocess.call('%s -tr %s %s %s %s -overwrite' % (path_tool, resolution_x, resolution_y, tif, tif_extract))
+    except WindowsError:
+        print 'Could not find tool! ({})'.format(path_tool)
+        return 1
 
 def tif2xyz(tif):
     """
@@ -194,6 +226,7 @@ if __name__=='__main__':
 
     # .tif file to extract from:
     tif = "../01_DTM/DHYMRAIN.tif"
-    box_tif(tif, cornerlist)
-
+    #box_tif(tif, cornerlist)
+    resample(3.2, 3.2, cornerlist)
     #print rectangle_lengths(500000, 2, 0.8, 0.4)
+    box_shp(cornerlist)
