@@ -4,3 +4,8 @@ Thumbs.db
 resolution_full/*
 resolution_reduced/*
 xyz/*
+tests/*
+!test/*.tif
+
+# PyCharm project settings
+.idea
