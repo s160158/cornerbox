@@ -1,6 +1,12 @@
 #!/usr/bin/env python
 from __future__ import division
 
+"""
+Generate regular rectangular interpolated grids from a .tif DEM file. Needs a two corners: upper-left and lower-right 
+corners + the path to DEM .tif file extracted by that list using the Cornerbox class. 
+"""
+
+
 from osgeo import gdal
 from cornerbox import *
 from decimal import Decimal # Stupid floating point numbers and modulo

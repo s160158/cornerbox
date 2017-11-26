@@ -1,9 +1,14 @@
-# What does it do?
+# cornerbox?
 
-Extract a box from a raster file (.tif) and output boundary XYZ-file for mesh generation in MIKE. Compatible XYZ-file scatter data are also generated for mesh interpolation.
+Names comes from a contraction of corners and box (Obvious, not?). A box is extracted from a smaller rectangular area on a source .tif DEM. A regular gridded rectangular interpolated mesh can then be created over the area.
 
-## MIKE boundary file
+## File formats
+Listed are some important file formats this program works with.
 
+### ESRI Shapefiles
+Box boundary can be output in a shapefile to imported into a GIS software such as ArcGIS or QGIS.
+
+### MIKE boundary file
 Extract a box by cornerpoint from a .tif raster image + output a .xyz-file of cornerpoints. The generated .xyz-file has the following form
 
 722600 6184300 0.0 1 0 0
@@ -22,19 +27,10 @@ Extract a box by cornerpoint from a .tif raster image + output a .xyz-file of co
 
 722600 6184300 0.0 0 0 0
 
-This creates 4 arcs. One for each side of a rectangle.
+This creates 4 arcs. One for each side of a rectangle. Such a boundary file allows for creation of meshes within the MIKE Mesh Generator.
 
-## MIKE scatter data file
+### MIKE scatter data file
+In order to import a DEM into MIKE Mesh Generator it must have an ASCII type format. The Cornerbox class allows conversion from .tif to .xyz to be used in MIKE together with the .xyz boundary file.
 
-
-# Todo
-restate purpose.. more singular
-
-NO RESAMPLING.. its done in MIKE by interpolation
-
-
-* Connectivity for nodes/vertices. What value
-* Two ways: (1) separation into callable functions (2) main() function that generates all the needed files, i.e., .tif (full + reduced), .xyz (of reduced) and a .xyz of arcs connecting cornerpoints to be imported in MIKE
-* Proper python notation
-* Make a json(flat text, possibly without json) config file (tool paths, etc.) 
-* GDAL instead of precompiled function
+### MIKE mesh file
+MIKE 21 FM(Flexible Mesh) simulation software requires the DEM as a flexible mesh file .mesh particular to DHI products. It is usually created using the MIKE Mesh Generator. However, the MeshGenerator class in this project allows creation of regular gridded meshes in the .mesh fileformat. This makes it possible to omit mesh creations within Mesh Generator. A discription of the file format was obtained from <http://manuals.mikepoweredbydhi.help/2017/General/FM_FileSpecification.pdf>.

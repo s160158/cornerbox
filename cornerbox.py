@@ -1,6 +1,28 @@
 #!/usr/bin/env python
 from __future__ import division
 
+"""
+Extract a box from a large .tif DEM by giving two corners:  upper-left and lower-right corners to extract a rectangular
+box. Can output shapefiles of extent in format .xyz boundary for MIKE and .shp for GIS software. The following folder
+structure and naming convention will be created:
+
+./ (top level)
+./extract/ (where all the cornerbox extracts will be)
+./extract/box{corner_x position}_{corner_y_position} (an extraction, i.e., a box, is defined by its top-left corner)
+./extract/box{corner_x position}_{corner_y_position}/{m, e, r, s}
+folders containing the extract files. Different types:
+m/ (mesh files - .mesh)
+e/ (extract of raster, i.e. no resample)
+r/ (resamples of extract)
+s/ (vector files showing cutout lines - .xyz(MIKE boundary), .shp
+
+a file will have the follwoing naming convention:
+box_{length_x}x{length_y}_r{resolution_x}x{resolution_y}
+(resolution not applicaple for vector files of cutout, so here
+box_{length_x}x{length_y}
+"""
+
+
 import os  # filesystem
 import subprocess
 from osgeo import ogr, osr
@@ -86,11 +108,11 @@ class Cornerbox:
 
         if not os.path.exists(foldername):
             os.mkdir(foldername)
-            os.mkdir(foldername + '/o')  # Original (resolution equal to the original raster)
+            os.mkdir(foldername + '/e')  # Original (resolution equal to the original raster)
             os.mkdir(foldername + '/r')  # Resample (resolution different... )
             os.mkdir(foldername + '/s')  # Shape (containing shapefiles marking extent of extract)
             os.mkdir(foldername + '/m')  # Mesh (MIKE compatible mesh files)
-            print 'created folders: {}(/o, /r, /s, /m)'.format(foldername)
+            print 'created folders: {}(/e, /r, /s, /m)'.format(foldername)
 
     def box_xyz_boundary(self):
         """
@@ -186,7 +208,7 @@ class Cornerbox:
                                                                                                  self.corners[3])
         #print self.tif_s
 
-        tif_e = './extract/{}/o/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
+        tif_e = './extract/{}/e/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
                                                                    self.num2str(length[0], 'length'),
                                                                    self.num2str(length[1], 'length'))  # hardcoded resolution!
         self.tif_e = tif_e
@@ -209,7 +231,7 @@ class Cornerbox:
 
         length = self.get_lengths(self.corners)
 
-        tif_e = './extract/{}/o/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
+        tif_e = './extract/{}/e/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
                                                            self.num2str(length[0], 'length'),
                                                            self.num2str(length[1], 'length'))
 
