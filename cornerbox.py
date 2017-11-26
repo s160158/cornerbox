@@ -8,10 +8,10 @@ from osgeo import ogr, osr
 
 class Cornerbox:
     corners = []
-    tif_source = ''; tif_extract = ''; tif_resample = ''
+    tif_s = ''; tif_e = ''; tif_r = ''
 
-    def __init__(self, tif_source = None):
-        self.tif_source = tif_source
+    def __init__(self, tif_s = None):
+        self.tif_s = tif_s
 
     @staticmethod
     def corners(ulx, uly, lx, ly):
@@ -184,14 +184,15 @@ class Cornerbox:
                                                                                                  self.corners[1],
                                                                                                  self.corners[2],
                                                                                                  self.corners[3])
-        #print self.tif_source
+        #print self.tif_s
 
-        tif_extract = './extract/{}/o/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
+        tif_e = './extract/{}/o/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
                                                                    self.num2str(length[0], 'length'),
                                                                    self.num2str(length[1], 'length'))  # hardcoded resolution!
+        self.tif_e = tif_e
         try:
             subprocess.call('%s -projwin %s %s %s %s %s %s' % (
-            path_tool, self.corners[0], self.corners[1], self.corners[2], self.corners[3], self.tif_source, tif_extract))
+            path_tool, self.corners[0], self.corners[1], self.corners[2], self.corners[3], self.tif_s, tif_e))
         except WindowsError:
             print 'Could not find tool! ({})'.format(path_tool)
 
@@ -208,18 +209,18 @@ class Cornerbox:
 
         length = self.get_lengths(self.corners)
 
-        tif_extract = './extract/{}/o/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
+        tif_e = './extract/{}/o/box_{}x{}_r004x004.tif'.format(self.folder_name(self.corners),
                                                            self.num2str(length[0], 'length'),
                                                            self.num2str(length[1], 'length'))
 
-        tif_resample = './extract/{}/r/box_{}x{}_r{}x{}.tif'.format(self.folder_name(self.corners),
+        tif_r = './extract/{}/r/box_{}x{}_r{}x{}.tif'.format(self.folder_name(self.corners),
                                                                    self.num2str(length[0], 'length'),
                                                                    self.num2str(length[1], 'length'),
                                                                    self.num2str(resolution_x, 'resolution'),
                                                                    self.num2str(resolution_y, 'resolution'))
 
         try:
-            subprocess.call('%s -tr %s %s %s %s -overwrite' % (path_tool, resolution_x, resolution_y, tif_extract, tif_resample))
+            subprocess.call('%s -tr %s %s %s %s -overwrite' % (path_tool, resolution_x, resolution_y, tif_e, tif_r))
         except WindowsError:
             print 'Could not find tool! ({})'.format(path_tool)
 
@@ -233,17 +234,31 @@ class Cornerbox:
         tool = 'gdal_translate.exe'
         path_tool = 'C:/OSGeo4W64/bin/%s' % tool
 
-        tif = '.' + self.tif_resample.split('.')[1]  # Remove extension
+        tif = '.' + self.tif_r.split('.')[1]  # Remove extension
 
         try:
             subprocess.call('%s -of XYZ %s.tif %s.xyz' % (path_tool, tif, tif))
         except WindowsError:
             print 'Could not find tool! ({})'.format(path_tool)
 
+    def get_filename_mesh(self, resolution_x, resolution_y):
+        """
+        Not used!
+        :param resolution_x:
+        :param resolution_y:
+        :return:
+        """
+        length = self.get_lengths(self.corners)
+
+        return './extract/{}/m/box_{}x{}_r{}x{}.mesh'.format(self.folder_name(self.corners),
+                                                                   self.num2str(length[0], 'length'),
+                                                                   self.num2str(length[1], 'length'),
+                                                                   self.num2str(resolution_x, 'resolution'),
+                                                                   self.num2str(resolution_y, 'resolution'))
 
 if __name__=='__main__':
-    corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
-    #self.corners = corners(722600, 6184300, 560, -560) # For larger resolution than 0.8x0.8 m
+    #corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
+    corners = Cornerbox.corners(722600, 6184300, 560, -560)
 
     # .tif file to extract from:
     tif = "../01_DTM/DHYMRAIN.tif"
@@ -252,7 +267,8 @@ if __name__=='__main__':
     box.corners = corners
     box.create_folder_structure()
     box.extract_tif()
-    box.resample(3.2, 3.2)
+    for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
+        box.resample(resolution, resolution)
     box.box_shp_boundary()
 
 

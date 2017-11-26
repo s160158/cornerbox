@@ -6,6 +6,7 @@ resolution_reduced/*
 xyz/*
 tests/*
 !test/*.tif
+*.pyc
 
 # PyCharm project settings
-.idea
+.idea/

@@ -25,19 +25,19 @@ class MeshGenerator():
         """
         ds = gdal.Open(tif, gdal.GA_ReadOnly)
         arr = np.array(ds.GetRasterBand(1).ReadAsArray())  # only one band - DEM
-        return arr
+        return np.fliplr(np.transpose(arr))
 
-    def get_resolution(self):
+    def get_resolution(self, arr):
         """
         Horizontal and vertical resolution of NumPy array
         :return:
         """
         # Horizontal resolution
-        resolution_x = (self.corners[2] - self.corners[0]) / self.arr_e.shape[0]
+        resolution_x = (self.corners[2] - self.corners[0]) / arr.shape[0]
         resolution_x = abs(resolution_x)  # Might not want to lose sign information
         self.lorr = np.sign(resolution_x)
         # Vertical resolution
-        resolution_y = (self.corners[3] - self.corners[1]) / self.arr_e.shape[0]
+        resolution_y = (self.corners[3] - self.corners[1]) / arr.shape[0]
         resolution_y = abs(resolution_y)
         self.uord = np.sign(resolution_y)
 
@@ -52,16 +52,18 @@ class MeshGenerator():
         """
         # Resolution_x and resolution_y need both be divisible by the original tif resolutions in the respective
         # directions
-        (resolution_x_e, resolution_y_e) = self.get_resolution()
+        (resolution_x_e, resolution_y_e) = self.get_resolution(self.arr_e)
 
-        if Decimal(str(resolution_x)) % Decimal(str(resolution_x_e)) or \
-                        Decimal(str(resolution_y)) % Decimal(str(resolution_y_e)):  # Really, this is a good solution?
-            raise ValueError('Resolution not divisble!')
+        if resolution_x != resolution_x_e or resolution_y != resolution_y_e: # Bad test!
+            if Decimal(str(resolution_x)) % Decimal(str(resolution_x_e)) or \
+                            Decimal(str(resolution_y)) % Decimal(str(resolution_y_e)):  # Really, this is a good solution?
+                raise ValueError('Resolution not divisble!')                            # could do int(1000 * x) % int(...
+                                                                                        # , or?
 
-        jump_x = int(resolution_x / resolution_x_e)  # only integer jumps
-        jump_y = int(resolution_y / resolution_y_e)
+        jump_x = int(round(resolution_x / resolution_x_e))  # only integer jumps (again problems with float division)
+        jump_y = int(round(resolution_y / resolution_y_e))
 
-        # if the size of the image is not divisble by the new resolution there will be cutoffs (now warning displayed)
+        # if the size of the image is not divisible by the new resolution there will be cutoffs (now warning displayed)
         self.arr_r = np.zeros([int(self.arr_e.shape[0] / jump_x), int(self.arr_e.shape[1] / jump_y), 3])
 
         for i in range(0, self.arr_r.shape[0]):
@@ -93,18 +95,33 @@ class MeshGenerator():
         Exports the resampled NumPy array to a .mesh file to be used with MIKE FM
         :return:
         """
-        filename = './tests/test.mesh'
+        (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
+        (length_x, length_y) = Cornerbox.get_lengths(corners)
+        filename = './extract/{}/m/box_{}x{}_r{}x{}.mesh'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
+                                                                 Cornerbox.num2str(length_x, 'length'),
+                                                                 Cornerbox.num2str(length_y, 'length'),
+                                                                 Cornerbox.num2str(resolution_x, 'resolution'),
+                                                                 Cornerbox.num2str(resolution_y, 'resolution'))
+        print 'saving resample to: {}'.format(filename)
         self.write_header(filename, self.arr_r.size / 3)
 
         fh = open(filename, 'a')
 
+        code = 0
         id = 1  # Node id
         for i in range(self.arr_r.shape[0]):
             for j in range(self.arr_r.shape[1]):
-                fh.write('\n{} {} {} {} 0'.format(id,
+
+                # Node code: (land boundary is code 1)
+                if i == 0 or j == 0 or i == self.arr_r.shape[0] - 1 or j == self.arr_r.shape[1] - 1:
+                    code = 1
+
+                fh.write('\n{} {} {} {} {}'.format(id,
                                                self.arr_r[i, j, 0],
                                                self.arr_r[i, j, 1],
-                                               self.arr_r[i, j, 2]))  # id X Y Z code
+                                               self.arr_r[i, j, 2],
+                                               code))  # id X Y Z code
+                code = 0
                 id += 1
 
         fh.close()
@@ -112,8 +129,9 @@ class MeshGenerator():
         fh = open(filename, 'a')
 
         # number of elements, maximum number of vertices in an element, type/code
-        element_header_line = ''.format((self.arr_r.shape[0] - 1) * (self.arr_r.shape[1] - 1), 4, 25)
+        element_header_line = '\n{} {} {}'.format((self.arr_r.shape[0] - 1) * (self.arr_r.shape[1] - 1), 4, 25)
         fh.write(element_header_line)
+        print 'Wrote element header line: {}'.format(element_header_line)
 
         id_matrix = np.transpose(np.arange(1, self.arr_r.size / 3 + 1, dtype='uint16').reshape((self.arr_r.shape[0],
                                                                                                 self.arr_r.shape[1])))
@@ -121,15 +139,11 @@ class MeshGenerator():
 
         for i in range(id_matrix.shape[0] - 1):
             for j in range(id_matrix.shape[1] - 1):
-                print "element: {}, {}, {}, {}".format(id_matrix[i,j],
-                                                       id_matrix[i + 1,j],
-                                                       id_matrix[i,j + 1],
-                                                       id_matrix[i + 1,j + 1])
-                element_line = '\n{} {} {} {} {}'.format(id,
+                element_line = '\n{} {} {} {} {}'.format(id,  # CCW connectivity direction
                                                          id_matrix[i,j],
                                                          id_matrix[i + 1,j],
-                                                         id_matrix[i,j + 1],
-                                                         id_matrix[i + 1,j + 1])  # id1, id2, id3, id4
+                                                         id_matrix[i + 1,j + 1],
+                                                         id_matrix[i, j + 1])  # id1, id2, id3, id4
                 fh.write(element_line)
                 id += 1
 
@@ -138,12 +152,21 @@ class MeshGenerator():
 
 
 if __name__=='__main__':
-    corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
+    #corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
+    corners = Cornerbox.corners(722600, 6184300, 560, -560)
+    # .tif file to extract from:
+    tif = "../01_DTM/DHYMRAIN.tif"
 
-    tif_e = './tests/tif_e.tif'
-    mg = MeshGenerator(tif_e)
+    box = Cornerbox(tif)
+    box.corners = corners
+    box.create_folder_structure()
+    box.extract_tif()
+    box.box_shp_boundary()
+
+    mg = MeshGenerator(box.tif_e)
     mg.corners = corners
-    print mg.get_resolution()
-    #mg.resample(3.2, 3.2)
-    mg.resample(100 * 0.4, 20 * 0.4)
+    for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
+        mg.resample(resolution, resolution)
+        mg.export_mesh()
+
     mg.export_mesh()
