@@ -139,7 +139,7 @@ class MeshGenerator():
         fh.write(element_header_line)
         print 'Wrote element header line: {}'.format(element_header_line)
 
-        id_matrix = np.transpose(np.arange(1, self.arr_r.size / 3 + 1, dtype='uint16').reshape((self.arr_r.shape[0],
+        id_matrix = np.transpose(np.arange(1, self.arr_r.size / 3 + 1, dtype='uint32').reshape((self.arr_r.shape[0],
                                                                                                 self.arr_r.shape[1])))
         id = 1  # Polygon id
 
@@ -156,6 +156,96 @@ class MeshGenerator():
         print 'Wrote {} elements to file!'.format(id - 1)
         fh.close()
 
+    def export_mesh_new(self):
+        """
+        Exports the resampled NumPy array to a .mesh file to be used with MIKE FM. Node/vertex id ordering is done
+        exactly as MIKE Mesh Generator does it (At least for regular rectangular meshes). Turns out not to be important.
+        :return:
+        """
+        (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
+        (length_x, length_y) = Cornerbox.get_lengths(corners)
+        filename = './extract/{}/m/box_{}x{}_r{}x{}.mesh'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
+                                                                 Cornerbox.num2str(length_x, 'length'),
+                                                                 Cornerbox.num2str(length_y, 'length'),
+                                                                 Cornerbox.num2str(resolution_x, 'resolution'),
+                                                                 Cornerbox.num2str(resolution_y, 'resolution'))
+        print 'saving resample to: {}'.format(filename)
+        self.write_header(filename, self.arr_r.size / 3)
+
+        fh = open(filename, 'a')
+        fh_nodes = open('./temp.mesh', 'w')
+
+        id_matrix = np.zeros((self.arr_r.shape[0], self.arr_r.shape[1]), dtype='uint32')  # initiate matrix (shit need 32 bit values in many cases!)
+
+        n_v = (self.arr_r.shape[0] - 2) * (self.arr_r.shape[1] - 2)  # number of vertices
+        id_v = 1
+        id_n = n_v + 1  # starting node id
+        for j in range(self.arr_r.shape[1]):
+            for i in range(self.arr_r.shape[0]):
+                # check for special circumstances when we encounter a node:
+                if i == 0 or j == 0 or i == self.arr_r.shape[0] - 1 or j == self.arr_r.shape[1] - 1:
+                    # id to write to node list and increment id_n
+                    if i == 0 and j == 1:
+                        id_matrix[i, j] = (n_v + 1) + 2
+                        id_matrix[i, j] = (n_v + 1) + 2
+                    elif i == 0 and j == self.arr_r.shape[1] - 1:
+                        id_matrix[i, j] = id_n + 1
+                        id_matrix[i, j] = id_n + 1
+                    elif i == 1 and j == self.arr_r.shape[1] - 1:
+                        id_matrix[i, j] = id_n
+                        id_n += 2
+                    elif i == 1 and j == 0:
+                        id_matrix[i, j] = id_n
+                        id_n += 2
+                    else:
+                        id_matrix[i, j] = id_n
+                        id_n += 1
+
+                    # write to temporary node list
+                    fh_nodes.write('\n{} {} {} {} {}'.format(id_matrix[i, j],
+                                                       self.arr_r[i, j, 0],
+                                                       self.arr_r[i, j, 1],
+                                                       self.arr_r[i, j, 2],
+                                                       1))  # id X Y Z code
+                else:  # not a node; a vertex
+                    id_matrix[i, j] = id_v
+                    fh.write('\n{} {} {} {} {}'.format(id_matrix[i, j],
+                                                       self.arr_r[i, j, 0],
+                                                       self.arr_r[i, j, 1],
+                                                       self.arr_r[i, j, 2],
+                                                       0))  # id X Y Z code
+                    id_v += 1
+        fh_nodes.close()  # to get at beginning - better way?
+
+        # append the nodes at the end of the vertices
+        fh_nodes = open('./temp.mesh', 'r')
+        for line in fh_nodes:
+            fh.write(line)
+        fh_nodes.close()
+
+        fh.close() # close only to open with append immidieately after!
+
+        fh = open(filename, 'a')
+
+        # number of elements, maximum number of vertices in an element, type/code
+        element_header_line = '\n{} {} {}'.format((self.arr_r.shape[0] - 1) * (self.arr_r.shape[1] - 1), 4, 25)
+        fh.write(element_header_line)
+        print 'Wrote element header line: {}'.format(element_header_line)
+
+        id = 1  # Polygon id
+
+        for j in range(id_matrix.shape[1] - 1):  # -1 as there are fewer elements than nodes/vertices
+            for i in range(id_matrix.shape[0] - 1):
+                element_line = '\n{} {} {} {} {}'.format(id,  # CCW connectivity direction
+                                                         id_matrix[i,j],
+                                                         id_matrix[i + 1,j],
+                                                         id_matrix[i + 1,j + 1],
+                                                         id_matrix[i, j + 1])  # id1, id2, id3, id4
+                fh.write(element_line)
+                id += 1
+
+        print 'Wrote {} elements to file!'.format(id - 1)
+        fh.close()
 
 if __name__=='__main__':
     #corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
@@ -173,9 +263,12 @@ if __name__=='__main__':
     mg.corners = corners
     #for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
     #    mg.resample(resolution, resolution)
-    #    mg.export_mesh()
+    #    mg.export_mesh_new()
 
+    #
+    mg.resample(1.6, 1.6)
+    mg.export_mesh()
 
     # 9x9 grid for debugging:
     mg.resample(400 * 0.4, 400 * 0.4)
-    mg.export_mesh()
+    mg.export_mesh_new()
