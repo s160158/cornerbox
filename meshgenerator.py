@@ -115,8 +115,8 @@ class MeshGenerator():
 
         code = 0
         id = 1  # Node id
-        for i in range(self.arr_r.shape[0]):
-            for j in range(self.arr_r.shape[1]):
+        for j in range(self.arr_r.shape[1]):
+            for i in range(self.arr_r.shape[0]):
 
                 # Node code: (land boundary is code 1)
                 if i == 0 or j == 0 or i == self.arr_r.shape[0] - 1 or j == self.arr_r.shape[1] - 1:
@@ -143,8 +143,8 @@ class MeshGenerator():
                                                                                                 self.arr_r.shape[1])))
         id = 1  # Polygon id
 
-        for i in range(id_matrix.shape[0] - 1):
-            for j in range(id_matrix.shape[1] - 1):
+        for j in range(id_matrix.shape[1] - 1):  # -1 as there are fewer elements than nodes/vertices
+            for i in range(id_matrix.shape[0] - 1):
                 element_line = '\n{} {} {} {} {}'.format(id,  # CCW connectivity direction
                                                          id_matrix[i,j],
                                                          id_matrix[i + 1,j],
@@ -171,8 +171,11 @@ if __name__=='__main__':
 
     mg = MeshGenerator(box.tif_e)
     mg.corners = corners
-    for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
-        mg.resample(resolution, resolution)
-        mg.export_mesh()
+    #for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
+    #    mg.resample(resolution, resolution)
+    #    mg.export_mesh()
 
+
+    # 9x9 grid for debugging:
+    mg.resample(400 * 0.4, 400 * 0.4)
     mg.export_mesh()

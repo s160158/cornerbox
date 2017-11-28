@@ -1,11 +1,16 @@
 Thumbs.db
 
-# folders
+# generated outputs
 resolution_full/*
 resolution_reduced/*
 xyz/*
+
+# tests
 tests/*
-!test/*.tif
+!tests/*.tif
+test.py
+
+# files
 *.pyc
 
 # PyCharm project settings
