@@ -17,12 +17,13 @@ class MeshGenerator():
     arr_e = None; arr_r = None  # To store NumPy arrays
     corners = []
     lorr = 0; uord = 0  # Direction of box edges from coordinate of first corner, i.e. (corners[0], corners[2])
+    method = ''
+    ds = None
 
     def __init__(self, tif):
         self.arr_e = self.tif2arr(tif)
 
-    @staticmethod
-    def tif2arr(tif):
+    def tif2arr(self, tif):
         """
         Reads a TIF file into an NumPy array. (Remember there is no projection info in this array and thus alo no
         resolution info)
@@ -30,6 +31,7 @@ class MeshGenerator():
         :return: array holding TIF file values
         """
         ds = gdal.Open(tif, gdal.GA_ReadOnly)
+        self.ds = ds
         arr = np.array(ds.GetRasterBand(1).ReadAsArray())  # only one band - DEM
         return np.fliplr(np.transpose(arr))
 
@@ -49,7 +51,7 @@ class MeshGenerator():
 
         return (resolution_x, resolution_y)
 
-    def resample(self, resolution_x, resolution_y):
+    def resample(self, resolution_x, resolution_y, method='near'):
         """
         Resamples the input TIF (also ties the points geographically, i.e. creates mesh)
         :param resolution_x:
@@ -72,11 +74,71 @@ class MeshGenerator():
         # if the size of the image is not divisible by the new resolution there will be cutoffs (now warning displayed)
         self.arr_r = np.zeros([int(self.arr_e.shape[0] / jump_x), int(self.arr_e.shape[1] / jump_y), 3])
 
-        for i in range(0, self.arr_r.shape[0]):
-            for j in range(0, self.arr_r.shape[1]):
-                self.arr_r[i, j, 0] = self.corners[0] + i * self.lorr * resolution_x
-                self.arr_r[i, j, 1] = self.corners[1] + j * self.uord * resolution_y
-                self.arr_r[i, j, 2] = self.arr_e[i * jump_x, j * jump_y]
+        if method == 'near':
+            for i in range(0, self.arr_r.shape[0]):
+                for j in range(0, self.arr_r.shape[1]):
+                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 2] = self.arr_e[int((i + 0.5) * jump_x), int((j + 0.5) * jump_y)]
+        elif method == 'min':
+            for i in range(0, self.arr_r.shape[0]):
+                for j in range(0, self.arr_r.shape[1]):
+                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 2] = np.min(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+        elif method == 'max':
+            for i in range(0, self.arr_r.shape[0]):
+                for j in range(0, self.arr_r.shape[1]):
+                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 2] = np.max(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+        elif method == 'mean':
+            for i in range(0, self.arr_r.shape[0]):
+                for j in range(0, self.arr_r.shape[1]):
+                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 2] = np.mean(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+        elif method == 'median':
+            for i in range(0, self.arr_r.shape[0]):
+                for j in range(0, self.arr_r.shape[1]):
+                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 2] = np.median(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+        else:
+            pass
+        self.method = method
+
+    def export_tif(self):
+        # create the output image
+        dvr = self.ds.GetDriver()
+        # print driver
+        (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
+        (length_x, length_y) = Cornerbox.get_lengths(corners)
+        filename = './extract/{}/r/box_{}x{}_r{}x{}_{}.tif'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
+                                                                 Cornerbox.num2str(length_x, 'length'),
+                                                                 Cornerbox.num2str(length_y, 'length'),
+                                                                 Cornerbox.num2str(resolution_x, 'resolution'),
+                                                                 Cornerbox.num2str(resolution_y, 'resolution'),
+                                                                 self.method)
+
+        ds_out = dvr.Create(filename, self.arr_r.shape[0], self.arr_r.shape[1], 1, gdal.GDT_Float32)
+        if ds_out is None:
+            raise WindowsError('Could not create file')
+
+        band = ds_out.GetRasterBand(1)
+
+        # write the data
+        band.WriteArray(np.transpose(np.fliplr(self.arr_r[:, :, 2])), 0, 0)
+
+        # flush data to disk, set the NoData value and calculate stats
+        band.FlushCache()
+        band.SetNoDataValue(-99) # not a good value
+
+        # georeference the image and set the projection
+        transform = self.ds.GetGeoTransform()
+        transform_out = (transform[0], resolution_x, transform[2], transform[3], transform[4], -resolution_y)  # set new pixel height/width
+        ds_out.SetGeoTransform(transform_out)
+        ds_out.SetProjection(self.ds.GetProjection())
 
     def write_header(self, filename, n_nodes):
         """
@@ -96,6 +158,7 @@ class MeshGenerator():
 
         fh.close()
 
+
     def export_mesh(self):
         """
         Exports the resampled NumPy array to a .mesh file to be used with MIKE FM
@@ -103,11 +166,12 @@ class MeshGenerator():
         """
         (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
         (length_x, length_y) = Cornerbox.get_lengths(corners)
-        filename = './extract/{}/m/box_{}x{}_r{}x{}.mesh'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
+        filename = './extract/{}/m/box_{}x{}_r{}x{}_{}.mesh'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
                                                                  Cornerbox.num2str(length_x, 'length'),
                                                                  Cornerbox.num2str(length_y, 'length'),
                                                                  Cornerbox.num2str(resolution_x, 'resolution'),
-                                                                 Cornerbox.num2str(resolution_y, 'resolution'))
+                                                                 Cornerbox.num2str(resolution_y, 'resolution'),
+                                                                 self.method)
         print 'saving resample to: {}'.format(filename)
         self.write_header(filename, self.arr_r.size / 3)
 
@@ -266,9 +330,31 @@ if __name__=='__main__':
     #    mg.export_mesh_new()
 
     #
-    mg.resample(1.6, 1.6)
-    mg.export_mesh()
+    #mg.resample(1.6, 1.6)
+    #mg.export_mesh()
 
     # 9x9 grid for debugging:
-    mg.resample(400 * 0.4, 400 * 0.4)
-    mg.export_mesh_new()
+    #mg.resample(400 * 0.4, 400 * 0.4, 'max')
+    mg.resample(6.4, 6.4, 'mean')
+    mg.export_mesh()
+    mg.export_tif()
+    #mg.resample(400 * 0.4, 400 * 0.4, 'min')
+    #mg.export_mesh()
+    #mg.resample(400 * 0.4, 400 * 0.4, 'near')
+    #mg.export_mesh()
+    #mg.resample(400 * 0.4, 400 * 0.4, 'mean')
+    #mg.export_mesh()
+
+    """
+    for resolution in [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
+        mg.resample(resolution, resolution, 'min')
+        mg.export_tif()
+        mg.resample(resolution, resolution, 'max')
+        mg.export_tif()
+        mg.resample(resolution, resolution, 'near')
+        mg.export_tif()
+        mg.resample(resolution, resolution, 'mean')
+        mg.export_tif()
+        mg.resample(resolution, resolution, 'median')
+        mg.export_tif()
+    """

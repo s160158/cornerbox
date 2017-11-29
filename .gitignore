@@ -12,7 +12,7 @@ test.py
 
 # files
 *.pyc
-temp.mesh
+temp.*
 
 # PyCharm project settings
 .idea/
