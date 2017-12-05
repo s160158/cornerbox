@@ -4,6 +4,14 @@ from __future__ import division
 """
 Generate regular rectangular interpolated grids from a .tif DEM file. Needs a two corners: upper-left and lower-right 
 corners + the path to DEM .tif file extracted by that list using the Cornerbox class. 
+
+TODO:
+- arr_r and arr_e not same structure (arr_r is a shape (x, y, 3), arr_e a shape (x, y) of bathymetry)
+- side lengths: lx % resoluton_x = 0 and ly % resolution_y for the crudest resolution
+- all resolutions divisible by 0.4 (ensures nodes at edges)
+- node points along the edges of the dem
+- refracture
+
 """
 
 
@@ -78,31 +86,31 @@ class MeshGenerator():
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y  # Go South
                     self.arr_r[i, j, 2] = self.arr_e[int((i + 0.5) * jump_x), int((j + 0.5) * jump_y)]
         elif method == 'min':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
                     self.arr_r[i, j, 2] = np.min(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
         elif method == 'max':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
                     self.arr_r[i, j, 2] = np.max(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
         elif method == 'mean':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
                     self.arr_r[i, j, 2] = np.mean(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
         elif method == 'median':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] + (j + 0.5) * self.uord * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
                     self.arr_r[i, j, 2] = np.median(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
         else:
             pass
@@ -220,100 +228,10 @@ class MeshGenerator():
         print 'Wrote {} elements to file!'.format(id - 1)
         fh.close()
 
-    def export_mesh_new(self):
-        """
-        Exports the resampled NumPy array to a .mesh file to be used with MIKE FM. Node/vertex id ordering is done
-        exactly as MIKE Mesh Generator does it (At least for regular rectangular meshes). Turns out not to be important.
-        :return:
-        """
-        (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
-        (length_x, length_y) = Cornerbox.get_lengths(corners)
-        filename = './extract/{}/m/box_{}x{}_r{}x{}.mesh'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
-                                                                 Cornerbox.num2str(length_x, 'length'),
-                                                                 Cornerbox.num2str(length_y, 'length'),
-                                                                 Cornerbox.num2str(resolution_x, 'resolution'),
-                                                                 Cornerbox.num2str(resolution_y, 'resolution'))
-        print 'saving resample to: {}'.format(filename)
-        self.write_header(filename, self.arr_r.size / 3)
-
-        fh = open(filename, 'a')
-        fh_nodes = open('./temp.mesh', 'w')
-
-        id_matrix = np.zeros((self.arr_r.shape[0], self.arr_r.shape[1]), dtype='uint32')  # initiate matrix (shit need 32 bit values in many cases!)
-
-        n_v = (self.arr_r.shape[0] - 2) * (self.arr_r.shape[1] - 2)  # number of vertices
-        id_v = 1
-        id_n = n_v + 1  # starting node id
-        for j in range(self.arr_r.shape[1]):
-            for i in range(self.arr_r.shape[0]):
-                # check for special circumstances when we encounter a node:
-                if i == 0 or j == 0 or i == self.arr_r.shape[0] - 1 or j == self.arr_r.shape[1] - 1:
-                    # id to write to node list and increment id_n
-                    if i == 0 and j == 1:
-                        id_matrix[i, j] = (n_v + 1) + 2
-                        id_matrix[i, j] = (n_v + 1) + 2
-                    elif i == 0 and j == self.arr_r.shape[1] - 1:
-                        id_matrix[i, j] = id_n + 1
-                        id_matrix[i, j] = id_n + 1
-                    elif i == 1 and j == self.arr_r.shape[1] - 1:
-                        id_matrix[i, j] = id_n
-                        id_n += 2
-                    elif i == 1 and j == 0:
-                        id_matrix[i, j] = id_n
-                        id_n += 2
-                    else:
-                        id_matrix[i, j] = id_n
-                        id_n += 1
-
-                    # write to temporary node list
-                    fh_nodes.write('\n{} {} {} {} {}'.format(id_matrix[i, j],
-                                                       self.arr_r[i, j, 0],
-                                                       self.arr_r[i, j, 1],
-                                                       self.arr_r[i, j, 2],
-                                                       1))  # id X Y Z code
-                else:  # not a node; a vertex
-                    id_matrix[i, j] = id_v
-                    fh.write('\n{} {} {} {} {}'.format(id_matrix[i, j],
-                                                       self.arr_r[i, j, 0],
-                                                       self.arr_r[i, j, 1],
-                                                       self.arr_r[i, j, 2],
-                                                       0))  # id X Y Z code
-                    id_v += 1
-        fh_nodes.close()  # to get at beginning - better way?
-
-        # append the nodes at the end of the vertices
-        fh_nodes = open('./temp.mesh', 'r')
-        for line in fh_nodes:
-            fh.write(line)
-        fh_nodes.close()
-
-        fh.close() # close only to open with append immidieately after!
-
-        fh = open(filename, 'a')
-
-        # number of elements, maximum number of vertices in an element, type/code
-        element_header_line = '\n{} {} {}'.format((self.arr_r.shape[0] - 1) * (self.arr_r.shape[1] - 1), 4, 25)
-        fh.write(element_header_line)
-        print 'Wrote element header line: {}'.format(element_header_line)
-
-        id = 1  # Polygon id
-
-        for j in range(id_matrix.shape[1] - 1):  # -1 as there are fewer elements than nodes/vertices
-            for i in range(id_matrix.shape[0] - 1):
-                element_line = '\n{} {} {} {} {}'.format(id,  # CCW connectivity direction
-                                                         id_matrix[i,j],
-                                                         id_matrix[i + 1,j],
-                                                         id_matrix[i + 1,j + 1],
-                                                         id_matrix[i, j + 1])  # id1, id2, id3, id4
-                fh.write(element_line)
-                id += 1
-
-        print 'Wrote {} elements to file!'.format(id - 1)
-        fh.close()
 
 if __name__=='__main__':
-    #corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
-    corners = Cornerbox.corners(722600, 6184300, 560, -560)
+    corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
+    #corners = Cornerbox.corners(722600, 6184300, 560, -560)
     # .tif file to extract from:
     tif = "../01_DTM/DHYMRAIN.tif"
 
@@ -335,9 +253,11 @@ if __name__=='__main__':
 
     # 9x9 grid for debugging:
     #mg.resample(400 * 0.4, 400 * 0.4, 'max')
-    mg.resample(6.4, 6.4, 'mean')
+    mg.resample(93.2, 93.2, 'near')
     mg.export_mesh()
     mg.export_tif()
+
+    #print mg.arr_e[0,0,1], mg.arr_e[0, 0, -1]
     #mg.resample(400 * 0.4, 400 * 0.4, 'min')
     #mg.export_mesh()
     #mg.resample(400 * 0.4, 400 * 0.4, 'near')
@@ -345,16 +265,24 @@ if __name__=='__main__':
     #mg.resample(400 * 0.4, 400 * 0.4, 'mean')
     #mg.export_mesh()
 
-    """
-    for resolution in [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
+
+    for resolution in [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 4.4, 6.4, 8.0]:
         mg.resample(resolution, resolution, 'min')
+        mg.export_mesh()
         mg.export_tif()
         mg.resample(resolution, resolution, 'max')
+        mg.export_mesh()
         mg.export_tif()
         mg.resample(resolution, resolution, 'near')
+        mg.export_mesh()
         mg.export_tif()
         mg.resample(resolution, resolution, 'mean')
+        mg.export_mesh()
         mg.export_tif()
         mg.resample(resolution, resolution, 'median')
+        mg.export_mesh()
         mg.export_tif()
-    """
+
+    mg.resample(0.4, 0.4, 'near')
+    mg.export_mesh()
+    mg.export_tif()

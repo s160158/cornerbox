@@ -26,7 +26,11 @@ box_{length_x}x{length_y}
 import os  # filesystem
 import subprocess
 from osgeo import ogr, osr
+import shutil
 
+
+global BIT
+BIT = 32
 
 class Cornerbox:
     corners = []
@@ -197,7 +201,10 @@ class Cornerbox:
         """
         # define path to the used tool (installed through OSGEO4W)
         tool = 'gdal_translate.exe'
-        path_tool = 'C:/OSGeo4W64/bin/%s' % tool
+        if BIT == 64:
+            path_tool = 'C:/OSGeo4W64/bin/%s' % tool
+        else:
+            path_tool = 'C:/OSGeo4W/bin/%s' % tool
 
         length = self.get_lengths(self.corners)
 
@@ -227,7 +234,10 @@ class Cornerbox:
         :return:
         """
         tool = 'gdalwarp.exe'
-        path_tool = 'C:/OSGeo4W64/bin/%s' % tool
+        if BIT == 64:
+            path_tool = 'C:/OSGeo4W64/bin/%s' % tool
+        else:
+            path_tool = 'C:/OSGeo4W/bin/%s' % tool
 
         length = self.get_lengths(self.corners)
 
@@ -240,13 +250,36 @@ class Cornerbox:
                                                                    self.num2str(length[1], 'length'),
                                                                    self.num2str(resolution_x, 'resolution'),
                                                                    self.num2str(resolution_y, 'resolution'))
+        self.tif_r = tif_r
+
+        if resolution_x == 0.4 and resolution_y == 0.4:
+            shutil.copyfile(self.tif_e, self.tif_r)
+        else:
+            try:
+                subprocess.call('%s -tr %s %s %s %s -overwrite' % (path_tool, resolution_x, resolution_y, tif_e, tif_r))
+            except WindowsError:
+                print 'Could not find tool! ({})'.format(path_tool)
+
+    def box_tif2asc(self):
+        """
+        Convert the resampled .tif box to .asc compatible with MIKE grid conversion to .dfs2
+        :param tif: Raster file (.tif) to convert to XYZ-file
+        :return: None
+        """
+        tool = 'gdal_translate.exe'
+
+        if BIT == 64:
+            path_tool = 'C:/OSGeo4W64/bin/%s' % tool
+        else:  # BIT == 32
+            path_tool = 'C:/OSGeo4W/bin/%s' % tool
+
+        basename = '.' + self.tif_r.split('.')[1]  # Remove extension
 
         try:
-            subprocess.call('%s -tr %s %s %s %s -overwrite' % (path_tool, resolution_x, resolution_y, tif_e, tif_r))
+            subprocess.call('%s -a_srs EPSG:4647 -of AAIGrid %s.tif %s.asc' % (path_tool, basename, basename))
         except WindowsError:
             print 'Could not find tool! ({})'.format(path_tool)
 
-    @staticmethod
     def box_tif2xyz(self):
         """
         Convert the resampled .tif box to .xyz
@@ -254,12 +287,16 @@ class Cornerbox:
         :return: None
         """
         tool = 'gdal_translate.exe'
-        path_tool = 'C:/OSGeo4W64/bin/%s' % tool
 
-        tif = '.' + self.tif_r.split('.')[1]  # Remove extension
+        if BIT == 64:
+            path_tool = 'C:/OSGeo4W64/bin/%s' % tool
+        else:  # BIT == 32
+            path_tool = 'C:/OSGeo4W/bin/%s' % tool
+
+        basename = '.' + self.tif_r.split('.')[1]  # Remove extension
 
         try:
-            subprocess.call('%s -of XYZ %s.tif %s.xyz' % (path_tool, tif, tif))
+            subprocess.call('%s -of XYZ %s.tif %s.xyz' % (path_tool, basename, basename))
         except WindowsError:
             print 'Could not find tool! ({})'.format(path_tool)
 
@@ -279,8 +316,8 @@ class Cornerbox:
                                                                    self.num2str(resolution_y, 'resolution'))
 
 if __name__=='__main__':
-    #corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
-    corners = Cornerbox.corners(722600, 6184300, 560, -560)
+    corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
+    #corners = Cornerbox.corners(722600, 6184300, 560, -560)
 
     # .tif file to extract from:
     tif = "../01_DTM/DHYMRAIN.tif"
@@ -289,9 +326,15 @@ if __name__=='__main__':
     box.corners = corners
     box.create_folder_structure()
     box.extract_tif()
-    for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
-        box.resample(resolution, resolution)
+    #box.resample(93.2, 93.2)
+    box.resample(0.4, 0.4)
+    #box.extract_tif()
+    #for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
+    #    box.resample(resolution, resolution)
     box.box_shp_boundary()
+    box.box_tif2xyz()
+    box.box_tif2asc()
+    box.box_xyz_boundary()
 
 
 
