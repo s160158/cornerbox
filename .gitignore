@@ -17,3 +17,4 @@ temp.*
 # PyCharm project settings
 .idea/
 venv*/ # environments
+venv/

@@ -1,32 +1,19 @@
 #!/usr/bin/env python
 from __future__ import division
 
-"""
-Generate regular rectangular interpolated grids from a .tif DEM file. Needs a two corners: upper-left and lower-right 
-corners + the path to DEM .tif file extracted by that list using the Cornerbox class. 
-
-TODO:
-- arr_r and arr_e not same structure (arr_r is a shape (x, y, 3), arr_e a shape (x, y) of bathymetry)
-- side lengths: lx % resoluton_x = 0 and ly % resolution_y for the crudest resolution
-- all resolutions divisible by 0.4 (ensures nodes at edges)
-- node points along the edges of the dem
-- refracture
-
-"""
-
-
 from osgeo import gdal
 from cornerbox import *
-from decimal import Decimal # Stupid floating point numbers and modulo
+
 import numpy as np
 
 
 class MeshGenerator():
-    arr_e = None; arr_r = None  # To store NumPy arrays
+    arr_e = None; arr_r = None  # To store NumPy arrays (arr_e is the extracted tif with boundaries)
     corners = []
-    lorr = 0; uord = 0  # Direction of box edges from coordinate of first corner, i.e. (corners[0], corners[2])
     method = ''
     ds = None
+    resolution_x_e = 0.0; resolution_y_e = 0.0
+    resolution_x = 0.0; resolution_y = 0.0
 
     def __init__(self, tif):
         self.arr_e = self.tif2arr(tif)
@@ -39,25 +26,13 @@ class MeshGenerator():
         :return: array holding TIF file values
         """
         ds = gdal.Open(tif, gdal.GA_ReadOnly)
+        # Get the resolution of the input raster
+        transform = ds.GetGeoTransform()
+        self.resolution_x_e = abs(transform[1])  # Resolution of original raster (x-direction)
+        self.resolution_y_e = abs(transform[5])  # Resolution of original raster (y-direction)
         self.ds = ds
         arr = np.array(ds.GetRasterBand(1).ReadAsArray())  # only one band - DEM
         return np.fliplr(np.transpose(arr))
-
-    def get_resolution(self, arr):
-        """
-        Horizontal and vertical resolution of NumPy array
-        :return:
-        """
-        # Horizontal resolution
-        resolution_x = (self.corners[2] - self.corners[0]) / arr.shape[0]
-        resolution_x = abs(resolution_x)  # Might not want to lose sign information
-        self.lorr = np.sign(resolution_x)
-        # Vertical resolution
-        resolution_y = (self.corners[3] - self.corners[1]) / arr.shape[0]
-        resolution_y = abs(resolution_y)
-        self.uord = np.sign(resolution_y)
-
-        return (resolution_x, resolution_y)
 
     def resample(self, resolution_x, resolution_y, method='near'):
         """
@@ -66,67 +41,69 @@ class MeshGenerator():
         :param resolution_y:
         :return:
         """
-        # Resolution_x and resolution_y need both be divisible by the original tif resolutions in the respective
-        # directions
-        (resolution_x_e, resolution_y_e) = self.get_resolution(self.arr_e)
+        self.resolution_x = resolution_x
+        self.resolution_y = resolution_y
 
-        if resolution_x != resolution_x_e or resolution_y != resolution_y_e: # Bad test!
-            if Decimal(str(resolution_x)) % Decimal(str(resolution_x_e)) or \
-                            Decimal(str(resolution_y)) % Decimal(str(resolution_y_e)):  # Really, this is a good solution?
-                raise ValueError('Resolution not divisble!')                            # could do int(1000 * x) % int(...
-                                                                                        # , or?
-
-        jump_x = int(round(resolution_x / resolution_x_e))  # only integer jumps (again problems with float division)
-        jump_y = int(round(resolution_y / resolution_y_e))
+        jump_x = int(round(resolution_x / self.resolution_x_e))  # only integer jumps (again problems with float division)
+        jump_y = int(round(resolution_y / self.resolution_y_e))
 
         # if the size of the image is not divisible by the new resolution there will be cutoffs (now warning displayed)
-        self.arr_r = np.zeros([int(self.arr_e.shape[0] / jump_x), int(self.arr_e.shape[1] / jump_y), 3])
+        self.arr_r = np.zeros([int((self.arr_e.shape[0] - 2 * 20.0 / self.resolution_x_e) / jump_x) + 1,
+                               int((self.arr_e.shape[1] - 2 * 20.0 / self.resolution_y_e) / jump_y) + 1,
+                               3])
+
+        corr_x = int(20.0 / self.resolution_x_e)
+        corr_y = int(20.0 / self.resolution_y_e)
 
         if method == 'near':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
-                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y  # Go South
-                    self.arr_r[i, j, 2] = self.arr_e[int((i + 0.5) * jump_x), int((j + 0.5) * jump_y)]
+                    self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y  # Go South
+                    self.arr_r[i, j, 2] = self.arr_e[int(i * jump_x + corr_x), int(j * jump_y + corr_y)]
         elif method == 'min':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
-                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
-                    self.arr_r[i, j, 2] = np.min(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+                    self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 2] = np.min(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
+                                                            (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         elif method == 'max':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
-                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
-                    self.arr_r[i, j, 2] = np.max(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+                    self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 2] = np.max(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
+                                                            (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         elif method == 'mean':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
-                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
-                    self.arr_r[i, j, 2] = np.mean(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+                    self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 2] = np.mean(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
+                                                             (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         elif method == 'median':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
-                    self.arr_r[i, j, 0] = self.corners[0] + (i + 0.5) * self.lorr * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - (j + 0.5) * self.uord * resolution_y
-                    self.arr_r[i, j, 2] = np.median(self.arr_e[i * jump_x: (i + 1) * jump_x, j * jump_y: (j + 1) * jump_y])
+                    self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
+                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 2] = np.median(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
+                                                               (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         else:
-            pass
+            raise ValueError('method: {} was not recognised.'.format(method))
+
         self.method = method
 
     def export_tif(self):
         # create the output image
         dvr = self.ds.GetDriver()
         # print driver
-        (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
         (length_x, length_y) = Cornerbox.get_lengths(corners)
         filename = './extract/{}/r/box_{}x{}_r{}x{}_{}.tif'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
                                                                  Cornerbox.num2str(length_x, 'length'),
                                                                  Cornerbox.num2str(length_y, 'length'),
-                                                                 Cornerbox.num2str(resolution_x, 'resolution'),
-                                                                 Cornerbox.num2str(resolution_y, 'resolution'),
+                                                                 Cornerbox.num2str(self.resolution_x, 'resolution'),
+                                                                 Cornerbox.num2str(self.resolution_y, 'resolution'),
                                                                  self.method)
 
         ds_out = dvr.Create(filename, self.arr_r.shape[0], self.arr_r.shape[1], 1, gdal.GDT_Float32)
@@ -144,7 +121,9 @@ class MeshGenerator():
 
         # georeference the image and set the projection
         transform = self.ds.GetGeoTransform()
-        transform_out = (transform[0], resolution_x, transform[2], transform[3], transform[4], -resolution_y)  # set new pixel height/width
+        transform_out = (self.corners[0] - 0.5 * self.resolution_x, self.resolution_x, transform[2],
+                         self.corners[1] + 0.5 * self.resolution_y, transform[4], -self.resolution_y)  # set new pixel height/width
+
         ds_out.SetGeoTransform(transform_out)
         ds_out.SetProjection(self.ds.GetProjection())
 
@@ -172,13 +151,13 @@ class MeshGenerator():
         Exports the resampled NumPy array to a .mesh file to be used with MIKE FM
         :return:
         """
-        (resolution_x, resolution_y) = self.get_resolution(self.arr_r)
+
         (length_x, length_y) = Cornerbox.get_lengths(corners)
         filename = './extract/{}/m/box_{}x{}_r{}x{}_{}.mesh'.format(Cornerbox.folder_name(self.corners), # take other (Cornerbox object)?
                                                                  Cornerbox.num2str(length_x, 'length'),
                                                                  Cornerbox.num2str(length_y, 'length'),
-                                                                 Cornerbox.num2str(resolution_x, 'resolution'),
-                                                                 Cornerbox.num2str(resolution_y, 'resolution'),
+                                                                 Cornerbox.num2str(self.resolution_x, 'resolution'),
+                                                                 Cornerbox.num2str(self.resolution_y, 'resolution'),
                                                                  self.method)
         print 'saving resample to: {}'.format(filename)
         self.write_header(filename, self.arr_r.size / 3)
@@ -230,8 +209,8 @@ class MeshGenerator():
 
 
 if __name__=='__main__':
-    corners = Cornerbox.corners(722600, 6184300, 280, -280) # For small 0.4x0.4 m resolution area
-    #corners = Cornerbox.corners(722600, 6184300, 560, -560)
+    corners = Cornerbox.corners(722600, 6184300, 281.6, -281.6) # For small 0.4x0.4 m resolution area
+
     # .tif file to extract from:
     tif = "../01_DTM/DHYMRAIN.tif"
 
@@ -253,9 +232,17 @@ if __name__=='__main__':
 
     # 9x9 grid for debugging:
     #mg.resample(400 * 0.4, 400 * 0.4, 'max')
-    mg.resample(93.2, 93.2, 'near')
+    #mg.resample(93.2, 93.2, 'near')
+
+
+    mg.resample(0.8, 0.8, 'min')
     mg.export_mesh()
     mg.export_tif()
+
+    mg.resample(0.8, 0.8, 'near')
+    mg.export_mesh()
+    mg.export_tif()
+
 
     #print mg.arr_e[0,0,1], mg.arr_e[0, 0, -1]
     #mg.resample(400 * 0.4, 400 * 0.4, 'min')
@@ -264,6 +251,19 @@ if __name__=='__main__':
     #mg.export_mesh()
     #mg.resample(400 * 0.4, 400 * 0.4, 'mean')
     #mg.export_mesh()
+
+"""
+    mg.resample(140.8, 140.8, 'near')
+    mg.export_mesh()
+    mg.export_tif()
+
+    mg.resample(140.8, 140.8, 'min')
+    mg.export_mesh()
+    mg.export_tif()
+
+    mg.resample(70.4, 70.4, 'near')
+    mg.export_mesh()
+    mg.export_tif()
 
 
     for resolution in [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 4.4, 6.4, 8.0]:
@@ -286,3 +286,4 @@ if __name__=='__main__':
     mg.resample(0.4, 0.4, 'near')
     mg.export_mesh()
     mg.export_tif()
+"""

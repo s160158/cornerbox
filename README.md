@@ -34,3 +34,21 @@ In order to import a DEM into MIKE Mesh Generator it must have an ASCII type for
 
 ### MIKE mesh file
 MIKE 21 FM(Flexible Mesh) simulation software requires the DEM as a flexible mesh file .mesh particular to DHI products. It is usually created using the MIKE Mesh Generator. However, the MeshGenerator class in this project allows creation of regular gridded meshes in the .mesh fileformat. This makes it possible to omit mesh creations within Mesh Generator. A discription of the file format was obtained from <http://manuals.mikepoweredbydhi.help/2017/General/FM_FileSpecification.pdf>.
+
+
+
+# TODO:
+- give warning
+* if resolution too crude for boundaries
+* if resolution not divisible by 0.4
+* if all crudes resolution not divisible by all other
+
+- make parser
+
+- better readme
+
+- remove unused functionality
+
+- make a test.py in ./tests that tests the combination of cornerbox and meshgenerator
+
+- fix shp_boundary()
