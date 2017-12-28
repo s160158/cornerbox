@@ -156,10 +156,17 @@ class Cornerbox:
 
         # create the spatial reference, WGS84
         srs = osr.SpatialReference()
-        srs.ImportFromEPSG(4647)
+        srs.ImportFromEPSG(32632)
 
         # create and write the layer
-        shp_lyr = shp_ds.CreateLayer('box', srs, ogr.wkbPolygon)
+        shp_lyr = shp_ds.CreateLayer('box_{}x{}.shp'.format(self.num2str(length[0], 'length'),
+                                                            self.num2str(length[1], 'length'),
+                                                            srs, ogr.wkbPolygon))
+
+        # Add an ID field
+        field_id = ogr.FieldDefn("id", ogr.OFTInteger)
+        shp_lyr.CreateField(field_id)
+
         print self.corners
 
         wkt = 'POLYGON (({} {}, {} {}, {} {}, {} {}, {} {}))'.format(
@@ -174,6 +181,7 @@ class Cornerbox:
 
         feature = ogr.Feature(shp_lyr.GetLayerDefn())
         feature.SetGeometry(geom)
+        feature.SetField("id", 1)
         shp_lyr.CreateFeature(feature)
         feature = None
 
@@ -302,6 +310,7 @@ class Cornerbox:
         else:  # BIT == 32
             path_tool = 'C:/OSGeo4W/bin/%s' % tool
 
+        print self.tif_r
         basename = '.' + self.tif_r.split('.')[1]  # Remove extension
 
         try:
@@ -334,14 +343,7 @@ if __name__=='__main__':
     box.corners = corners
     box.create_folder_structure()
     box.extract_tif()
-    #box.resample(93.2, 93.2)
-    box.resample(3.2, 3.2)
-    #box.extract_tif()
-    #for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
-    #    box.resample(resolution, resolution)
     box.box_shp_boundary()
-    box.box_tif2xyz()
-    box.box_tif2asc()
     box.box_xyz_boundary()
 
 

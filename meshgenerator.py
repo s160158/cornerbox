@@ -59,34 +59,34 @@ class MeshGenerator():
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y  # Go South
+                    self.arr_r[i, j, 1] = self.corners[3] + j * resolution_y  # Start bottom and go north
                     self.arr_r[i, j, 2] = self.arr_e[int(i * jump_x + corr_x), int(j * jump_y + corr_y)]
         elif method == 'min':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[3] + j * resolution_y
                     self.arr_r[i, j, 2] = np.min(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
                                                             (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         elif method == 'max':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[3] + j * resolution_y
                     self.arr_r[i, j, 2] = np.max(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
                                                             (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         elif method == 'mean':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[3] + j * resolution_y
                     self.arr_r[i, j, 2] = np.mean(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
                                                              (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         elif method == 'median':
             for i in range(0, self.arr_r.shape[0]):
                 for j in range(0, self.arr_r.shape[1]):
                     self.arr_r[i, j, 0] = self.corners[0] + i * resolution_x
-                    self.arr_r[i, j, 1] = self.corners[1] - j * resolution_y
+                    self.arr_r[i, j, 1] = self.corners[3] + j * resolution_y
                     self.arr_r[i, j, 2] = np.median(self.arr_e[(i - 1) * jump_x + jump_x // 2 + corr_x: (i + 1) * jump_x + jump_x // 2 + corr_x,
                                                                (j - 1) * jump_y + jump_y // 2 + corr_y: (j + 1) * jump_y + jump_y // 2 + corr_y])
         else:
@@ -169,10 +169,17 @@ class MeshGenerator():
         for j in range(self.arr_r.shape[1]):
             for i in range(self.arr_r.shape[0]):
 
-                # Node code: (land boundary is code 1)
-                if i == 0 or j == 0 or i == self.arr_r.shape[0] - 1 or j == self.arr_r.shape[1] - 1:
-                    code = 1
-
+                # Node code: (land boundary is code 1 - setting up custom ones)
+                if i == 0:
+                    code = 100
+                elif j == 0:
+                    code = 101
+                elif i == self.arr_r.shape[0] - 1:
+                    code = 102
+                elif j == self.arr_r.shape[1] - 1:
+                    code = 103
+                else:
+                    code = 0
                 fh.write('\n{} {} {} {} {}'.format(id,
                                                self.arr_r[i, j, 0],
                                                self.arr_r[i, j, 1],
@@ -218,55 +225,15 @@ if __name__=='__main__':
     box.corners = corners
     box.create_folder_structure()
     box.extract_tif()
-    box.box_shp_boundary()
 
     mg = MeshGenerator(box.tif_e)
     mg.corners = corners
-    #for resolution in [0.4, 0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2]:
-    #    mg.resample(resolution, resolution)
-    #    mg.export_mesh_new()
 
-    #
-    #mg.resample(1.6, 1.6)
-    #mg.export_mesh()
-
-    # 9x9 grid for debugging:
-    #mg.resample(400 * 0.4, 400 * 0.4, 'max')
-    #mg.resample(93.2, 93.2, 'near')
-
-
-    mg.resample(0.8, 0.8, 'min')
+    mg.resample(0.4, 0.4, 'near')
     mg.export_mesh()
     mg.export_tif()
-
-    mg.resample(0.8, 0.8, 'near')
-    mg.export_mesh()
-    mg.export_tif()
-
-
-    #print mg.arr_e[0,0,1], mg.arr_e[0, 0, -1]
-    #mg.resample(400 * 0.4, 400 * 0.4, 'min')
-    #mg.export_mesh()
-    #mg.resample(400 * 0.4, 400 * 0.4, 'near')
-    #mg.export_mesh()
-    #mg.resample(400 * 0.4, 400 * 0.4, 'mean')
-    #mg.export_mesh()
-
-"""
-    mg.resample(140.8, 140.8, 'near')
-    mg.export_mesh()
-    mg.export_tif()
-
-    mg.resample(140.8, 140.8, 'min')
-    mg.export_mesh()
-    mg.export_tif()
-
-    mg.resample(70.4, 70.4, 'near')
-    mg.export_mesh()
-    mg.export_tif()
-
-
-    for resolution in [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.2, 4.4, 6.4, 8.0]:
+    #for resolution in [6.4]: # divisible by 0.4 and 3.2, 38.4
+    for resolution in [0.8, 1.6, 3.2, 4.4, 6.4, 8.8, 17.6]:
         mg.resample(resolution, resolution, 'min')
         mg.export_mesh()
         mg.export_tif()
@@ -283,7 +250,3 @@ if __name__=='__main__':
         mg.export_mesh()
         mg.export_tif()
 
-    mg.resample(0.4, 0.4, 'near')
-    mg.export_mesh()
-    mg.export_tif()
-"""
